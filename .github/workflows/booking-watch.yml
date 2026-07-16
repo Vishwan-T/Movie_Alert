@@ -1,0 +1,50 @@
+name: booking-watch
+
+on:
+  schedule:
+    # Every 10 minutes. GitHub's minimum is 5 min and scheduled runs are
+    # often delayed a few minutes under load -- fine for booking alerts.
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}   # lets you trigger a manual run from the Actions tab
+
+# Allow the workflow to commit the updated state file back to the repo.
+permissions:
+  contents: write
+
+concurrency:
+  group: booking-watch
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run poller
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Optional: only set this secret if your target URL is an internal
+          # API that needs specific headers/cookies (JSON object).
+          HEADERS_JSON: ${{ secrets.HEADERS_JSON }}
+        run: python poller.py
+
+      - name: Persist state
+        run: |
+          if [[ -n "$(git status --porcelain state.json)" ]]; then
+            git config user.name "booking-watch-bot"
+            git config user.email "actions@users.noreply.github.com"
+            git add state.json
+            git commit -m "chore: update booking-watch state [skip ci]"
+            git push
+          else
+            echo "No state change."
+          fi

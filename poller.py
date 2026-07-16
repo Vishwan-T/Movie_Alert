@@ -19,6 +19,7 @@ import os
 import re
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 
 import requests
@@ -68,7 +69,11 @@ def load_config():
     if os.environ.get("HEADERS_JSON"):
         cfg["headers"] = json.loads(os.environ["HEADERS_JSON"])
 
-    required = ["target_url", "theatre", "telegram_bot_token", "telegram_chat_id"]
+    required = ["target_url", "telegram_bot_token", "telegram_chat_id"]
+    if cfg.get("detector") == "bms_date":
+        required.append("requested_date")
+    else:
+        required.append("theatre")
     missing = [k for k in required if not cfg.get(k)]
     if missing:
         sys.exit(f"Missing required config: {', '.join(missing)}")
@@ -93,7 +98,40 @@ def fetch(cfg):
     return resp.text
 
 
+def is_available_bms_date(page_text, cfg):
+    """
+    BookMyShow-specific detector for "a given date has opened for booking".
+
+    BMS only renders showtimes for the date currently being displayed, and it
+    silently falls back to the nearest available date when you request a date
+    that hasn't opened yet. So the requested date (e.g. 20260720) sits at a
+    low ~3 count (just the date-strip navigation) until it opens, at which
+    point its showtimes render and it becomes the *dominant* date token.
+
+    Rule: open when the requested date is the most-referenced date token on
+    the page and it clears a small floor (well above strip-only noise).
+    """
+    requested = cfg["requested_date"]  # e.g. "20260720"
+    floor = cfg.get("min_references", 10)
+
+    tokens = re.findall(r"20\d{6}", page_text)
+    if not tokens:
+        return False
+
+    counts = Counter(tokens)
+    top_date, _ = counts.most_common(1)[0]
+    requested_count = counts.get(requested, 0)
+
+    return top_date == requested and requested_count >= floor
+
+
 def is_available(page_text, cfg):
+    if cfg.get("detector") == "bms_date":
+        return is_available_bms_date(page_text, cfg)
+    return is_available_generic(page_text, cfg)
+
+
+def is_available_generic(page_text, cfg):
     """
     Booking is considered OPEN for the target theatre when the theatre name
     is present AND at least one 'booking is live' signal is present.
@@ -132,7 +170,8 @@ def main():
     cfg = load_config()
     state = load_json(STATE_PATH, default={"available": False}) or {"available": False}
 
-    label = f"{cfg.get('movie', 'movie')} @ {cfg['theatre']}"
+    target_desc = cfg.get("theatre") or cfg.get("requested_date", "target")
+    label = f"{cfg.get('movie', 'movie')} @ {target_desc}"
 
     try:
         page = fetch(cfg)
@@ -145,12 +184,22 @@ def main():
     print(f"[{label}] available={available} (was {state.get('available')})")
 
     if available and not state.get("available"):
-        msg = (
-            f"🎬 Booking is OPEN!\n\n"
-            f"{cfg.get('movie', 'Movie')}\n"
-            f"Theatre: {cfg['theatre']}\n\n"
-            f"Book here: {cfg['target_url']}"
-        )
+        if cfg.get("detector") == "bms_date":
+            rd = cfg["requested_date"]
+            pretty = f"{rd[6:8]}-{rd[4:6]}-{rd[0:4]}"
+            msg = (
+                f"🎬 Booking just OPENED!\n\n"
+                f"{cfg.get('movie', 'Movie')}\n"
+                f"Date: {pretty}\n\n"
+                f"Book here: {cfg['target_url']}"
+            )
+        else:
+            msg = (
+                f"🎬 Booking is OPEN!\n\n"
+                f"{cfg.get('movie', 'Movie')}\n"
+                f"Theatre: {cfg['theatre']}\n\n"
+                f"Book here: {cfg['target_url']}"
+            )
         send_telegram(cfg["telegram_bot_token"], cfg["telegram_chat_id"], msg)
         print(f"[{label}] notification sent")
 
