@@ -1,7 +1,12 @@
 {
-  "detector": "bms_date",
+  "detector": "venue_date",
   "movie": "Jana Nayagan",
   "requested_date": "20260723",
-  "url_template": "https://in.bookmyshow.com/movies/chennai/jana-nayagan/buytickets/ET00430817/{date}",
-  "min_references": 10
+  "venue_codes": [
+    "KVCS",
+    "INPR",
+    "PVSR",
+    "CBMC"
+  ],
+  "url_template": "https://in.bookmyshow.com/movies/chennai/jana-nayagan/buytickets/ET00430817/{date}"
 }
