@@ -3,10 +3,7 @@
   "movie": "Jana Nayagan",
   "requested_date": "20260723",
   "venue_codes": [
-    "ACON",
-    "INPR",
-    "PVSR",
-    "CBMC"
+    "ACON"
   ],
   "url_template": "https://in.bookmyshow.com/movies/chennai/jana-nayagan/buytickets/ET00430817/{date}"
 }
